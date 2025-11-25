@@ -5,7 +5,13 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import threading
 import asyncio
-from src.cfg.constants import *
+from src.cfg.constants import LLM_MODEL_PATH, DEVICE
+if  'mlx' in LLM_MODEL_PATH.lower():
+    MLX = True
+    from mlx_lm import load, generate
+    from mlx_lm.sample_utils import make_sampler
+
+
 
 app = FastAPI(title="LLM API", version="1.0")
 
@@ -26,7 +32,7 @@ class LLMModel:
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:
-                    print(f"Loading model at {MODEL_PATH} for the first time")
+                    print(f"Loading model at {LLM_MODEL_PATH} for the first time")
                     cls._instance = super(LLMModel, cls).__new__(cls)
                     cls._instance._initialize()
                     print('I created my instance')
@@ -35,39 +41,42 @@ class LLMModel:
     
     def _initialize(self):
         print("initializing")
-        # TODO figure out how to better handle the initialization (i.e. mixtral dies because it doesn't have attention)
-        # TODO find out why when this dies the code around it continues i.e. a model is returned to generate_text, but I never see the print out of "I created my instance"
-        self.model = transformers.AutoModelForCausalLM.from_pretrained(
-            MODEL_PATH,
-            trust_remote_code=True,
-            dtype=torch.bfloat16,
-            device_map="auto",
-            attn_implementation="sdpa" # faster inference
-        ).eval()
-        print("model loaded")
+        if MLX:
+            self.model, self.tokenizer = load(LLM_MODEL_PATH)
+        else:
+            # TODO figure out how to better handle the initialization (i.e. mixtral dies because it doesn't have attention)
+            # TODO find out why when this dies the code around it continues i.e. a model is returned to generate_text, but I never see the print out of "I created my instance"
+            self.model = transformers.AutoModelForCausalLM.from_pretrained(
+                LLM_MODEL_PATH,
+                trust_remote_code=True,
+                dtype=torch.bfloat16,
+                device_map=DEVICE,
+                attn_implementation="sdpa" # faster inference
+            ).eval()
+            print("model loaded")
 
-        self.tokenizer = transformers.AutoTokenizer.from_pretrained(MODEL_PATH)
-        print("tokenizer created")
+            self.tokenizer = transformers.AutoTokenizer.from_pretrained(LLM_MODEL_PATH)
+            print("tokenizer created")
         
-        # for batching, need to set pad tokens
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
-        
-        self.pipeline = transformers.pipeline(
-            model=self.model,
-            tokenizer=self.tokenizer,
-            return_full_text=False,
-            task="text-generation",
-            temperature=0.1,
-            top_p=0.15,
-            top_k=0,
-            max_new_tokens=1648,
-            repetition_penalty=1.1,
-            do_sample=True,
-            batch_size=BATCH_SIZE # for batch support
-        )
-        print("pipeline created")
+            # for batching, need to set pad tokens
+            if self.tokenizer.pad_token is None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+                self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+            
+            self.pipeline = transformers.pipeline(
+                model=self.model,
+                tokenizer=self.tokenizer,
+                return_full_text=False,
+                task="text-generation",
+                temperature=0.1,
+                top_p=0.15,
+                top_k=0,
+                max_new_tokens=1648,
+                repetition_penalty=1.1,
+                do_sample=True,
+                batch_size=BATCH_SIZE # for batch support
+            )
+            print("pipeline created")
         
         self.request_queue = asyncio.Queue() # queue for holding requests to process
         self.batch_task = None # current task
@@ -120,20 +129,42 @@ class LLMModel:
                     top_p = batch[0]["top_p"]
                     
                     start_time = time.time()
-                    
-                    results = self.pipeline(
-                        prompts, 
-                        max_new_tokens=max_new_tokens,
-                        temperature=temperature,
-                        top_p=top_p
-                    )
+                    if MLX:
+                        results = []
+                        for prompt in prompts:
+                            #breakpoint()
+                            messages = [
+                                {"role":"system", "content":"""You are ChatGPT, a large language model trained by OpenAI.
+                                Knowledge cutoff: 2024-06
+                                Current date: 2025-11-24
+
+                                Reasoning: medium
+
+                                # Valid channels: analysis, commentary, final. Channel must be included for every message."""},
+                                {"role": "user", "content":prompt}]
+                            
+                            prompt = self.tokenizer.apply_chat_template(
+                                messages, add_generation_prompt=True
+                            )
+                            sampler = make_sampler(temp=0.8, min_p=0.05, top_k=40, top_p=0.8)
+                            results.append(generate(model=self.model, tokenizer=self.tokenizer,
+                                           prompt=prompt, sampler=sampler, max_tokens=2048))
+                    else:
+                        results = self.pipeline(
+                            prompts, 
+                            max_new_tokens=max_new_tokens,
+                            temperature=temperature,
+                            top_p=top_p
+                        )
                     
                     response_time = round(time.time() - start_time, 2)
                     
                     # for every future, set its result
                     for result, future in zip(results, futures):
-                        output_txt = result[0].get("generated_text", str(result))
-                        
+                        if MLX:
+                            output_txt = result
+                        else:
+                            output_txt = result[0].get("generated_text", str(result))
                         future.set_result({
                             "generated_text": output_txt,
                             "response_time_sec": response_time,

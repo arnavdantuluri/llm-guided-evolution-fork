@@ -29,6 +29,7 @@ def retrieve_base_code(idx):
 def clean_code_from_llm(code_from_llm):
     """Cleans the code received from LLM."""
     code_generator = None
+    print('CODE FROM LLM:', code_from_llm)
     # Select Correct LLM
     if LLM_MODEL == 'mixtral' or LLM_MODEL == 'llama3.3':
         code_generator = submit_mixtral_local
@@ -54,7 +55,6 @@ def clean_code_from_llm(code_from_llm):
         #     verified_code = code_generator(prompt, top_p=0.15, temperature=0.1) 
         #     print(verified_code)
         #     return '\n'.join(verified_code.strip().split("```")[1].split('\n')[1:])
-   
     return '\n'.join(code_from_llm.strip().split("```")[1].split('\n')[1:])
 
 def generate_augmented_code(txt2llm, augment_idx, apply_quality_control, top_p, temperature, inference_submission=False):
