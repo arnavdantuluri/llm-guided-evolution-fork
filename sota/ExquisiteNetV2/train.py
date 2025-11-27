@@ -27,7 +27,7 @@ def get_args():
     parser.add_argument('-weight', type=str, default=None, help="path of pretrained weight")
     parser.add_argument('-amp', action="store_true", help="auto mixed precision training")
     # won't really run 1000 epochs, when lr less than end_lr, training will be stopped
-    parser.add_argument('-epoch', type=int, default=2)
+    parser.add_argument('-epoch', type=int, default=1000)
     parser.add_argument('-save_dir', type=str, default="weight", help="path where the weight will be saved")
     parser.add_argument('-bs', type=int, default=192)
     parser.add_argument('-opt', type=str, default="sgd", help="optimizer")
@@ -41,6 +41,7 @@ def get_args():
     parser.add_argument('-worker', default=8)
     parser.add_argument('-seed', default=None)
     parser.add_argument('-network', type=str, default="network", help="model file")
+    parser.add_argument('-variant_dir', type=str, default='./')
     return parser.parse_args()
 
 
@@ -49,6 +50,7 @@ def main():
 
     # This is LLM Guided Code
     # Import the module dynamically
+    sys.path.append(args.variant_dir)
     networks_module = importlib.import_module(args.network)
 
     # Now you can use `networks_module` to access the contents of `networks`

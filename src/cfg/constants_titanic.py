@@ -12,7 +12,8 @@ SEED_NETWORK = os.path.join(SOTA_ROOT, 'model.py')
 MODEL = "model"
 # Path to local LLM model path used by server.py for LLM operations
 #LLM_MODEL_PATH = "/storage/ice-shared/vip-vvk/llm_storage/meta-llama/Llama-3.3-70B-Instruct/"
-LLM_MODEL_PATH = "mlx-community/gpt-oss-20b-MXFP4-Q8"
+# LLM_MODEL_PATH = "mlx-community/gpt-oss-20b-MXFP4-Q8"
+LLM_MODEL_PATH = "mlx-community/Qwen3-Coder-30B-A3B-Instruct-8bit"
 VARIANT_DIR = os.path.join(SOTA_ROOT, "models/llmge_models") 
 TRAIN_FILE = os.path.join(SOTA_ROOT, "eval.py") 
 
